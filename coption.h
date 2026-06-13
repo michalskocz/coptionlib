@@ -10,60 +10,100 @@ Licensed under the BSD 2-Clause License
 #include <stdlib.h>
 #include <stddef.h>
 
-#define GENERATE_OPTION(type)                                            \
+#define __GET_OPTION_TYPE_EXTERNAL_NAME(type) option_##type##_t
+#define __GET_OPTION_TYPE_INTERNAL_NAME(type) __option_##type##_t
+
+#define __OPTION_INTERNAL_FROM_EXTERNAL(type, opt) \
+    ((__GET_OPTION_TYPE_INTERNAL_NAME(type) *)((char *)(opt) - sizeof(__GET_OPTION_TYPE_INTERNAL_NAME(type))))
+
+#define __GENERATE_OPTION_TYPE(type)                                      \
+typedef struct {                                                          \
+    bool exist;                                                           \
+} __GET_OPTION_TYPE_EXTERNAL_NAME(type);                                   \
                                                                           \
 typedef struct {                                                          \
     type *value;                                                          \
-} __option_##type##_t;                                                    \
-                                                                          \
-typedef struct {                                                          \
-    bool exist;                                                           \
-} option_##type##_t;                                                      \
-                                                                          \
-static inline option_##type##_t *option_##type##_init(void)               \
+} __GET_OPTION_TYPE_INTERNAL_NAME(type);
+
+#define __GENERATE_OPTION_TYPE_INIT(type)                                 \
+static inline __GET_OPTION_TYPE_EXTERNAL_NAME(type) *option_##type##_init(void) \
 {                                                                         \
     char *buffer = malloc(                                                \
-        sizeof(__option_##type##_t) + sizeof(option_##type##_t));         \
+        sizeof(__GET_OPTION_TYPE_INTERNAL_NAME(type)) +                   \
+        sizeof(__GET_OPTION_TYPE_EXTERNAL_NAME(type)));                   \
                                                                           \
     if (!buffer)                                                          \
         return NULL;                                                      \
                                                                           \
-    __option_##type##_t *hidden = (__option_##type##_t *)buffer;          \
+    __GET_OPTION_TYPE_INTERNAL_NAME(type) *hidden =                        \
+        (__GET_OPTION_TYPE_INTERNAL_NAME(type) *)buffer;                  \
+                                                                          \
+    __GET_OPTION_TYPE_EXTERNAL_NAME(type) *opt =                          \
+        (__GET_OPTION_TYPE_EXTERNAL_NAME(type) *)(                        \
+            buffer + sizeof(__GET_OPTION_TYPE_INTERNAL_NAME(type)));      \
+                                                                          \
     hidden->value = NULL;                                                 \
-                                                                          \
-    option_##type##_t *opt =                                              \
-        (option_##type##_t *)(buffer + sizeof(__option_##type##_t));      \
-                                                                          \
     opt->exist = false;                                                   \
                                                                           \
     return opt;                                                           \
-}                                                                         \
-                                                                          \
-static inline void option_##type##_free(option_##type##_t *opt)           \
-{                                                                         \
-    free((char *)opt - sizeof(__option_##type##_t));                      \
-}                                                                         \
-                                                                          \
+}
+
+#define __GENERATE_OPTION_TYPE_SET(type)                                  \
 static inline void option_##type##_set(                                   \
-    option_##type##_t *opt,                                               \
+    __GET_OPTION_TYPE_EXTERNAL_NAME(type) *opt,                           \
     type *value)                                                          \
 {                                                                         \
-    __option_##type##_t *hidden =                                         \
-        (__option_##type##_t *)((char *)opt -                            \
-        sizeof(__option_##type##_t));                                     \
+    if (!opt)                                                             \
+        return;                                                           \
+                                                                          \
+    __GET_OPTION_TYPE_INTERNAL_NAME(type) *hidden =                       \
+        __OPTION_INTERNAL_FROM_EXTERNAL(type, opt);                       \
                                                                           \
     hidden->value = value;                                                \
     opt->exist = (value != NULL);                                         \
-}                                                                         \
-                                                                          \
-static inline type *option_##type##_get(                                  \
-    option_##type##_t *opt)                                               \
+}
+
+#define __GENERATE_OPTION_TYPE_FREE(type)                                 \
+static inline void option_##type##_free(                                  \
+    __GET_OPTION_TYPE_EXTERNAL_NAME(type) *opt)                           \
 {                                                                         \
-    __option_##type##_t *hidden =                                         \
-        (__option_##type##_t *)((char *)opt -                            \
-        sizeof(__option_##type##_t));                                     \
+    if (!opt)                                                             \
+        return;                                                           \
+                                                                          \
+    free((char *)opt - sizeof(__GET_OPTION_TYPE_INTERNAL_NAME(type)));    \
+}
+
+#define __GENERATE_OPTION_TYPE_GET(type)                                  \
+static inline type *option_##type##_get(                                  \
+    __GET_OPTION_TYPE_EXTERNAL_NAME(type) *opt)                           \
+{                                                                         \
+    if (!opt || !opt->exist)                                              \
+        return NULL;                                                      \
+                                                                          \
+    __GET_OPTION_TYPE_INTERNAL_NAME(type) *hidden =                       \
+        __OPTION_INTERNAL_FROM_EXTERNAL(type, opt);                       \
                                                                           \
     return hidden->value;                                                 \
 }
+
+#define __GENERATE_OPTION_TYPE_GET_OR_ELSE(type)                          \
+static inline type *option_##type##_get_or_else(                          \
+    __GET_OPTION_TYPE_EXTERNAL_NAME(type) *opt,                           \
+    type *fallback)                                                       \
+{                                                                         \
+    type *value = option_##type##_get(opt);                               \
+    return value ? value : fallback;                                      \
+}
+
+#define __GENERATE_OPTION_METHODS(type)                                   \
+__GENERATE_OPTION_TYPE_INIT(type)                                         \
+__GENERATE_OPTION_TYPE_SET(type)                                          \
+__GENERATE_OPTION_TYPE_FREE(type)                                         \
+__GENERATE_OPTION_TYPE_GET(type)                                          \
+__GENERATE_OPTION_TYPE_GET_OR_ELSE(type)
+
+#define GENERATE_OPTION(type)                                             \
+__GENERATE_OPTION_TYPE(type)                                              \
+__GENERATE_OPTION_METHODS(type)
 
 #endif // C_OPTION_H
